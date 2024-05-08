@@ -610,7 +610,7 @@ site_verification:
 
 theme_color:
   enable: true
-  main: "#6BFCCD"
+  main: "#8CA7D0"
   paginator: "#00c4b6"
   button_hover: "#FF7242"
   text_selection: "#00c4b6"
@@ -645,7 +645,7 @@ text_align_justify: false
 # Website Background (設置網站背景)
 # can set it to color or image (可設置圖片 或者 顔色)
 # The formal of image: url(http://xxxxxx.com/xxx.jpg)
-background: "#FFFFFF" 
+background: url(https://img2.imgtp.com/2024/05/08/3dtOe0XX.png)
 
 # Footer Background
 footer_bg: false
