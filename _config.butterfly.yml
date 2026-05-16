@@ -238,7 +238,7 @@ aside:
       link: https://github.com/srhn225
   card_announcement:
     enable: true
-    content: 雨停之前，把一些微小的想法放在这里。
+    content: 雨が止む前に。
   card_recent_post:
     enable: true
     limit: 5 # if set 0 will show all
