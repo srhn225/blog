@@ -60,7 +60,7 @@ tags:
 
 ## 参考链接
 
-- [QQ音乐歌单「Hane&VOCALOID」](https://y.qq.com/n/ryqq/playlist/7231491380)
+- [QQ 音乐歌单：Hane&VOCALOID](https://y.qq.com/n/ryqq/playlist/7231491380)
 - [Uta-Net：桜の社](https://www.uta-net.com/song/213969/)
 - [KARENT：Moon and Flowers / GEKKA](https://karent.jp/album/2737)
 - [初音ミク Wiki：止まった時を旅する少女](https://w.atwiki.jp/hmiku/pages/19913.html)
