@@ -16,6 +16,10 @@ import {
   assertRemoteUnchanged,
   plainText,
   githubRepository,
+  contentType,
+  parseSentence,
+  sentenceRules,
+  escapeHtml,
 } from "./core.mjs";
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
@@ -96,6 +100,8 @@ export async function createWriter({
 } = {}) {
   root = await fs.realpath(root);
   const postsDir = path.join(root, "source", "_posts");
+  const contentDir = (type, base = root) => path.join(base, "source", contentType(type) === "sentence" ? "_sentences" : "_posts");
+  await fs.mkdir(contentDir("sentence"), { recursive: true });
   const stateDir = path.join(root, ".writer");
   const draftsDir = path.join(stateDir, "drafts");
   const jobsDir = path.join(stateDir, "jobs");
@@ -181,7 +187,7 @@ export async function createWriter({
           resolved !== baseReal &&
           !resolved.startsWith(`${baseReal}${path.sep}`)
         )
-          throw new WriterError("文章路径不能指向文章目录之外。");
+          throw new WriterError("内容路径不能指向内容目录之外。");
         break;
       } catch (error) {
         if (error.code !== "ENOENT" || !allowMissing) throw error;
@@ -193,14 +199,15 @@ export async function createWriter({
       base = path.join(base, part);
       try {
         if ((await fs.lstat(base)).isSymbolicLink())
-          throw new WriterError("写作台不修改符号链接文章。");
+          throw new WriterError("写作台不修改符号链接内容。");
       } catch (error) {
         if (error.code !== "ENOENT" || !allowMissing) throw error;
       }
     }
     return target;
   };
-  const allPosts = async () => {
+  const allPosts = async (type = "post") => {
+    const directory = contentDir(type);
     const files = [];
     const walk = async (dir, prefix = "") => {
       for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -212,28 +219,33 @@ export async function createWriter({
           files.push(relative);
       }
     };
-    await walk(postsDir);
+    await walk(directory);
     const posts = await Promise.all(
       files.map(async (filename) => {
         try {
-          const raw = await fs.readFile(await postFile(filename), "utf8");
-          const data = parsePost(raw);
+          const raw = await fs.readFile(await postFile(filename, directory), "utf8");
+          const data = type === "sentence" ? parseSentence(raw) : parsePost(raw);
           return {
+            contentType: type,
             filename,
             title: data.title || filename,
             date: data.date,
             categories: data.categories,
             tags: data.tags,
+            author: data.author,
+            homepage: data.homepage,
+            content: type === "sentence" ? data.content : undefined,
             excerpt: data.content.replace(/[#*`>]/g, "").slice(0, 120),
           };
         } catch {
           return {
+            contentType: type,
             filename,
             title: filename,
             date: "",
             categories: [],
             tags: [],
-            error: "文章信息无法解析",
+            error: "内容信息无法解析",
           };
         }
       }),
@@ -261,7 +273,7 @@ export async function createWriter({
     });
     if (!response.ok)
       throw new WriterError(
-        `GitHub 部署查询暂时不可用（HTTP ${response.status}）。文章已推送，可打开 Actions 查看，稍后重试查询。`,
+        `GitHub 部署查询暂时不可用（HTTP ${response.status}）。内容已推送，可打开 Actions 查看，稍后重试查询。`,
         502,
       );
     return response.json();
@@ -272,7 +284,7 @@ export async function createWriter({
         "远端不是 GitHub 仓库，已推送，但无法自动查询 Pages 部署。",
         502,
       );
-    await step(job, "deploy", "GitHub 正在构建并部署文章…");
+    await step(job, "deploy", "GitHub 正在构建并部署内容…");
     const deadline = Date.now() + 15 * 60_000;
     while (Date.now() < deadline) {
       const data = await fetchJson(
@@ -286,7 +298,7 @@ export async function createWriter({
         if (workflow.status === "completed") {
           if (workflow.conclusion !== "success")
             throw new WriterError(
-              `文章已推送，但 GitHub Pages 部署结果是 ${workflow.conclusion}。请打开 Actions 查看日志。`,
+              `内容已推送，但 GitHub Pages 部署结果是 ${workflow.conclusion}。请打开 Actions 查看日志。`,
               502,
             );
           await step(job, "deploy", "GitHub Pages 部署成功。", "done");
@@ -294,18 +306,18 @@ export async function createWriter({
         }
         job.message =
           workflow.status === "queued"
-            ? "文章已推送，等待 GitHub 开始构建…"
-            : "GitHub 正在构建并部署文章…";
+            ? "内容已推送，等待 GitHub 开始构建…"
+            : "GitHub 正在构建并部署内容…";
         await recordJob(job);
       }
       await sleep(deploymentPollMs);
     }
     if (job.steps.deploy !== "done")
       throw new WriterError(
-        "文章已推送，部署仍在进行。可以打开 Actions 查看或稍后重试查询。",
+        "内容已推送，部署仍在进行。可以打开 Actions 查看或稍后重试查询。",
         502,
       );
-    await step(job, "live", "正在核对线上文章的标题和正文…");
+    await step(job, "live", job.contentType === "sentence" ? "正在核对短句分区和首页一言…" : "正在核对线上内容的标题和正文…");
     for (let attempt = 0; attempt < 12; attempt++) {
       const url = new URL(job.publicUrl);
       // Only contact the configured blog; front-matter permalinks cannot choose a service to probe.
@@ -314,7 +326,7 @@ export async function createWriter({
         url.origin !== new URL(config.url).origin
       )
         throw new WriterError(
-          "文章链接不属于当前博客，请检查 permalink 配置。",
+          "内容链接不属于当前博客，请检查 permalink 配置。",
         );
       url.searchParams.set("writer_verify", `${job.commit}-${attempt}`);
       const response = await fetch(url, {
@@ -323,19 +335,27 @@ export async function createWriter({
       }).catch(() => null);
       if (response?.ok) {
         const html = plainText(await response.text());
+        let homepageVerified = true;
+        if (job.homepageText) {
+          const homepage = new URL(`${config.url.replace(/\/$/, "")}/`);
+          homepage.searchParams.set("writer_verify", `${job.commit}-${attempt}`);
+          const homeResponse = await fetch(homepage, { redirect: "error", signal: AbortSignal.timeout(20_000) }).catch(() => null);
+          homepageVerified = Boolean(homeResponse?.ok && (await homeResponse.text()).includes(JSON.stringify(escapeHtml(job.homepageText))));
+        }
         if (
+          homepageVerified &&
           html.includes(job.title) &&
           (!job.excerpt || html.includes(job.excerpt))
         ) {
           job.status = "deployed";
-          await step(job, "live", "文章已上线，标题和正文核对通过。", "done");
+          await step(job, "live", job.contentType === "sentence" ? (job.homepageText ? "短句已上线，首页一言收录核对通过。" : "短句已上线，分区内容核对通过。") : "内容已上线，标题和正文核对通过。", "done");
           return;
         }
       }
       await sleep(deploymentPollMs);
     }
     throw new WriterError(
-      "GitHub 部署成功，但线上页面尚未核对通过。请打开文章检查，或稍后重试查询。",
+      "GitHub 部署成功，但线上页面尚未核对通过。请打开内容检查，或稍后重试查询。",
       502,
     );
   };
@@ -349,10 +369,10 @@ export async function createWriter({
         ["merge", "--ff-only", "--no-edit", `origin/${branch}`],
         root,
       );
-      job.localSync = "本地文章已同步。";
+      job.localSync = "本地内容已同步。";
     } catch {
       job.localSync =
-        "文章已推送；本地有待合并的改动，未自动同步。草稿仍保留在写作台。";
+        "内容已推送；本地有待合并的改动，未自动同步。草稿仍保留在写作台。";
     }
     await recordJob(job);
   };
@@ -380,16 +400,17 @@ export async function createWriter({
         ["checkout", "--quiet", "--detach", "FETCH_HEAD"],
         scratch,
       );
+      const type = contentType(draft.contentType);
       const remotePost = await postFile(
         draft.filename,
-        path.join(scratch, "source", "_posts"),
+        contentDir(type, scratch),
         { allowMissing: true },
       );
       const remoteContent = await readOptional(remotePost);
       assertRemoteUnchanged(draft, remoteContent, desired);
       // Keep concurrent edits by other tools out of a publication from this draft.
       const localContent = await readOptional(
-        await postFile(draft.filename, postsDir, { allowMissing: true }),
+        await postFile(draft.filename, contentDir(type), { allowMissing: true }),
       );
       if (
         localContent !== draft.baseContent &&
@@ -397,13 +418,13 @@ export async function createWriter({
         draft.kind !== "new"
       )
         throw new WriterError(
-          "本地文章在草稿打开后发生了变化，请先导出草稿并重新打开文章。",
+          "本地内容在草稿打开后发生了变化，请先导出草稿并重新打开内容。",
           409,
         );
       await fs.mkdir(path.dirname(remotePost), { recursive: true });
       await fs.writeFile(remotePost, desired);
-      await step(job, "prepare", "文章已准备，正在独立目录里检查。", "done");
-      await step(job, "build", "正在生成博客并检查文章页面…");
+      await step(job, "prepare", "内容已准备，正在独立目录里检查。", "done");
+      await step(job, "build", "正在生成博客并检查内容页面…");
       await fs.symlink(
         path.join(root, "node_modules"),
         path.join(scratch, "node_modules"),
@@ -411,7 +432,7 @@ export async function createWriter({
       );
       const output = await run(
         process.execPath,
-        [path.join(appDir, "build.mjs"), scratch, draft.filename],
+        [path.join(appDir, "build.mjs"), scratch, draft.filename, type],
         scratch,
         180_000,
       );
@@ -422,7 +443,7 @@ export async function createWriter({
       )
         throw new WriterError(`博客构建失败：${output.slice(-1800)}`, 500);
       Object.assign(job, JSON.parse(result[1]));
-      await step(job, "build", "构建通过，文章页面检查通过。", "done");
+      await step(job, "build", "构建通过，内容页面检查通过。", "done");
       if (job.mode === "check") {
         job.status = "checked";
         job.message = "发布检查通过。现在可以发布到 GitHub。";
@@ -431,8 +452,8 @@ export async function createWriter({
       }
       if (!gitName || !gitEmail)
         throw new WriterError("请先为 Git 配置 user.name 和 user.email。");
-      await step(job, "push", "正在将这篇文章提交到 GitHub…");
-      const relative = `source/_posts/${draft.filename}`;
+      await step(job, "push", "正在将这份内容提交到 GitHub…");
+      const relative = `source/${type === "sentence" ? "_sentences" : "_posts"}/${draft.filename}`;
       await run("git", ["add", "--", relative], scratch);
       const changed = (
         await run("git", ["diff", "--cached", "--name-only", "-z"], scratch)
@@ -441,7 +462,7 @@ export async function createWriter({
         .filter(Boolean);
       if (changed.length) {
         if (changed.length !== 1 || changed[0] !== relative)
-          throw new WriterError("提交包含了文章之外的文件，已停止发布。", 500);
+          throw new WriterError("提交包含了内容之外的文件，已停止发布。", 500);
         await run(
           "git",
           [
@@ -452,7 +473,7 @@ export async function createWriter({
             "commit",
             "--quiet",
             "-m",
-            `blog: ${draft.baseContent === null ? "publish" : "update"} ${draft.title}`,
+            `blog: ${draft.baseContent === null ? "publish" : "update"} ${type === "sentence" ? "sentence " : ""}${draft.title}`,
             "--",
             relative,
           ],
@@ -487,8 +508,8 @@ export async function createWriter({
         job,
         "push",
         changed.length
-          ? "文章已推送到 GitHub。"
-          : "GitHub 已有相同文章，正在核对部署。",
+          ? "内容已推送到 GitHub。"
+          : "GitHub 已有相同内容，正在核对部署。",
         "done",
       );
       await locked(draft.id, async () => {
@@ -515,17 +536,18 @@ export async function createWriter({
 
   const startJob = async (draft, mode) => {
     if (busy)
-      throw new WriterError("已有一篇文章正在检查或发布，请等待它完成。", 409);
+      throw new WriterError("已有一份内容正在检查或发布，请等待它完成。", 409);
     validateDraft(draft, { publish: true });
     const job = {
       id: randomUUID(),
       draftId: draft.id,
       mode,
       title: draft.title,
+      contentType: contentType(draft.contentType),
       status: "running",
       stage: "prepare",
       steps: {},
-      message: "正在准备文章…",
+      message: "正在准备内容…",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       actionsUrl: repository
@@ -538,7 +560,7 @@ export async function createWriter({
     return job;
   };
   const bootstrap = async () => {
-    const [posts, drafts] = await Promise.all([allPosts(), allDrafts()]);
+    const [posts, sentences, drafts] = await Promise.all([allPosts(), allPosts("sentence"), allDrafts()]);
     return {
       token,
       site: {
@@ -549,8 +571,10 @@ export async function createWriter({
         branch,
         canPublish: Boolean(gitName && gitEmail),
         timezone: "Asia/Shanghai",
+        sentenceRules,
       },
       posts,
+      sentences,
       drafts: drafts.map(publicDraft),
       categories: list(posts.flatMap((post) => post.categories)),
       tags: list(posts.flatMap((post) => post.tags)),
@@ -566,7 +590,7 @@ export async function createWriter({
     for await (const chunk of req) {
       raw += chunk;
       if (Buffer.byteLength(raw) > 2_100_000)
-        throw new WriterError("文章超过 2 MB，请拆分或缩短。", 413);
+        throw new WriterError("内容超过 2 MB，请拆分或缩短。", 413);
     }
     try {
       return JSON.parse(raw || "{}");
@@ -624,14 +648,15 @@ export async function createWriter({
       }
       if (pathname === "/api/drafts/from-post" && req.method === "POST") {
         const input = await body(req);
+        const type = contentType(input.contentType);
         const filename = safeFilename(input.filename);
-        return await locked(`post:${filename}`, async () => {
+        return await locked(`${type}:${filename}`, async () => {
           const existing = (await allDrafts()).find(
-            (draft) => draft.kind === "post" && draft.filename === filename,
+            (draft) => draft.kind === "post" && draft.filename === filename && contentType(draft.contentType) === type,
           );
           if (existing) return sendJson(res, publicDraft(existing));
-          const raw = await fs.readFile(await postFile(filename), "utf8");
-          const { metadata, ...fields } = parsePost(raw);
+          const raw = await fs.readFile(await postFile(filename, contentDir(type)), "utf8");
+          const { metadata, ...fields } = type === "sentence" ? parseSentence(raw) : parsePost(raw);
           const draft = await saveDraft({
             id: randomUUID(),
             kind: "post",
@@ -651,7 +676,7 @@ export async function createWriter({
           const original = await readDraft(draftMatch[1]);
           if (busy && jobs.get(busy)?.draftId === original.id)
             throw new WriterError(
-              "这篇文章正在检查或发布，请完成后继续编辑。",
+              "这份内容正在检查或发布，请完成后继续编辑。",
               409,
             );
           if (input.version !== original.version)
@@ -660,8 +685,9 @@ export async function createWriter({
               409,
             );
           const fields = validateDraft(input);
+          if (fields.contentType !== contentType(original.contentType)) throw new WriterError("草稿不能改成另一种内容类型，请新建草稿。");
           if (original.kind === "post" && fields.filename !== original.filename)
-            throw new WriterError("编辑已有文章时不能更改文件名。");
+            throw new WriterError("编辑已有内容时不能更改文件名。");
           return sendJson(
             res,
             publicDraft(await saveDraft({ ...original, ...fields })),
@@ -676,7 +702,7 @@ export async function createWriter({
             throw new WriterError("草稿有新版本，请刷新后再删除。", 409);
           if (busy && jobs.get(busy)?.draftId === draft.id)
             throw new WriterError(
-              "文章正在检查或发布，请完成后再删除草稿。",
+              "内容正在检查或发布，请完成后再删除草稿。",
               409,
             );
           await fs.unlink(draftPath(draft.id));
@@ -762,7 +788,7 @@ export async function createWriter({
         {
           error:
             error.code === "ENOENT"
-              ? "没有找到文章或依赖，请检查文件并运行 npm install。"
+              ? "没有找到内容或依赖，请检查文件并运行 npm install。"
               : error.message,
         },
         error.status || 500,
@@ -779,7 +805,7 @@ export async function createWriter({
     if (job.status === "running") {
       job.status = job.pushed ? "attention" : "failed";
       job.message = job.pushed
-        ? "服务曾重新启动，文章已推送。点击重新查询可继续检查部署。"
+        ? "服务曾重新启动，内容已推送。点击重新查询可继续检查部署。"
         : "服务在检查或推送时重新启动。请先查看 GitHub，再重试发布；相同内容不会重复提交。";
       job.steps[job.stage] = "error";
       await recordJob(job);

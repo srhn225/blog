@@ -8,6 +8,11 @@ import {
   assertRemoteUnchanged,
   shanghaiDate,
   githubRepository,
+  parseSentence,
+  homepageEligible,
+  sentenceLength,
+  escapeHtml,
+  plainText,
 } from "../core.mjs";
 
 const original =
@@ -32,6 +37,30 @@ test("unchanged articles preserve exact bytes and nested metadata", () => {
   assert.equal(parsed.metadata.custom_option, "keep-me");
   assert.equal(parsed.metadata.author, "Hane");
   assert.equal(parsed.metadata.copyright_author, "Hane");
+});
+
+test("sentence drafts keep plain text and use Unicode lengths for homepage selection", () => {
+  const sentence = { ...draft(), contentType: "sentence", baseContent: null, content: "  雨会停，想法会留下。  ", homepage: true };
+  const serialized = serializeDraft(sentence);
+  const parsed = parseSentence(serialized);
+  assert.equal(parsed.content, "雨会停，想法会留下。");
+  assert.equal(parsed.author, "Codex");
+  assert.equal(parsed.homepage, true);
+  assert.equal(serializeDraft({ ...parsed, filename: "sentence.md", baseContent: serialized }), serialized);
+  assert.equal(sentenceLength("🌧️和雨"), 4);
+  assert.equal(homepageEligible("雨"), false);
+  assert.equal(homepageEligible("雨停"), true);
+  assert.equal(homepageEligible("雨".repeat(60)), true);
+  assert.equal(homepageEligible("雨".repeat(61)), false);
+  assert.equal(homepageEligible("雨停\n天晴"), false);
+  assert.equal(homepageEligible("🌧".repeat(60)), true);
+  assert.throws(() => validateDraft({ ...sentence, content: "雨".repeat(501) }));
+  assert.throws(() => validateDraft({ ...sentence, homepage: "false" }));
+  assert.throws(() => validateDraft({ ...sentence, contentType: "../post" }));
+  assert.throws(() => validateDraft({ ...sentence, content: "" }, { publish: true }));
+  assert.equal(escapeHtml('</script><img onerror="alert(1)">'), '&lt;/script&gt;&lt;img onerror=&quot;alert(1)&quot;&gt;');
+  assert.equal(plainText('<p>&amp;lt;img&amp;gt; &lt;b&gt; &quot;雨&quot;</p>'), '&lt;img&gt; <b> "雨"');
+  assert.equal(parseSentence(serializeDraft({ ...sentence, date: "2026-09-30 10:00", homepage: false })).date, "2026-09-30 10:00:00");
 });
 
 test("filenames reject traversal and accept Unicode article names", () => {

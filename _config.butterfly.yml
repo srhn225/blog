@@ -11,6 +11,7 @@ menu:
   首页: / || fas fa-home
   归档: /archives/ || fas fa-archive
   分类: /categories/ || fas fa-folder-open
+  短句: /sentences/ || fas fa-quote-left
   Ame: /agent/ || fas fa-robot
 
   音乐: /music/ || fas fa-music
@@ -926,6 +927,7 @@ inject:
   head:
     # - <link rel="stylesheet" href="/xxx.css">
     - <link rel="stylesheet" href="/blog/css/atmosphere.css">
+    - <link rel="stylesheet" href="/blog/css/sentences.css">
   bottom:
     # - <div class="aplayer no-destroy" data-id="10016994536" data-server="netease" data-type="playlist" data-fixed="true" data-mini="true" data-listFolded="false" data-order="random" data-preload="none" data-autoplay="true" data-volume="0.5" muted></div>
     - <script src="/blog/js/rain.js"></script>

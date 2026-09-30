@@ -32,3 +32,4 @@ Hane 会亲自写下工作、研究、音乐和日常。Ame 协助整理、编�
 - 不直接修改 `node_modules/hexo-theme-butterfly/`，优先通过 `_config.butterfly.yml`、`source/css/`、`source/js/` 和页面 Markdown 呈现设定。
 - 首页、导航、侧栏和介绍页应统一呈现 Hane 与 Ame 的共同经营关系。
 - 保留博客雨夜、玻璃感、安静而自然的气质，让具体的生活与想法成为文章的中心。
+- 短句独立保存于 `source/_sentences/`，在 `/sentences/` 展示，不混入文章列表。写作台可发布短句；默认把 2–60 字、无换行且开启首页展示的句子收录到首页一言。较长内容保留在短句分区。

@@ -59,6 +59,14 @@ test.before(async () => {
     ["config", "user.email", "writer-tests@example.invalid"],
     root,
   );
+  // Exercise current uncommitted site extensions in the isolated fixture, too.
+  const featureFiles = ["scripts/sentences.js", "lib/sentences.cjs", "_config.butterfly.yml", "source/css/sentences.css", "source/_sentences/.gitkeep"];
+  for (const file of featureFiles) {
+    await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await fs.copyFile(path.join(project, file), path.join(root, file));
+  }
+  await run("git", ["add", "--", ...featureFiles], root);
+  if (await run("git", ["diff", "--cached", "--name-only"], root)) await run("git", ["commit", "--quiet", "-m", "prepare sentence fixture"], root);
   await run("git", ["clone", "--quiet", "--bare", root, remote], root);
   await run("git", ["remote", "set-url", "origin", remote], root);
   await fs.symlink(
@@ -249,6 +257,62 @@ test("publishes only the selected Unicode post and preserves unrelated staged wo
     await run("git", ["rev-parse", "refs/heads/main"], remote),
     job.commit,
   );
+});
+
+test("sentence publication stays separate from articles and preserves unrelated files", async () => {
+  const head = await run("git", ["rev-parse", "refs/heads/main"], remote);
+  const index = await run("git", ["diff", "--cached", "--binary"], root);
+  const db = hash(await fs.readFile(path.join(root, "db.json")));
+  const created = await request("/api/drafts", "POST", {
+    ...newDraft("独立短句.md"), contentType: "sentence", content: "雨会停，想法会留下。", homepage: true,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.contentType, "sentence");
+  assert.deepEqual(created.data.categories, []);
+  const switchType = await request(`/api/drafts/${created.data.id}`, "PUT", { ...created.data, contentType: "post" });
+  assert.equal(switchType.status, 400);
+  const started = await request("/api/publish", "POST", { draftId: created.data.id, version: created.data.version });
+  const job = await waitJob(started.data.id);
+  assert.equal(job.pushed, true, job.message);
+  assert.equal(job.homepageText, "雨会停，想法会留下。");
+  assert.match(job.publicUrl, /\/sentences\/#sentence-/);
+  assert.equal(await run("git", ["diff", "--name-only", "-z", head, job.commit], root), "source/_sentences/独立短句.md\0");
+  assert.equal(hash(await fs.readFile(path.join(root, "db.json"))), db);
+  assert.equal(await run("git", ["diff", "--cached", "--binary"], root), index);
+  const listing = await request("/api/bootstrap");
+  assert.ok(listing.data.sentences.some(item => item.filename === "独立短句.md"));
+  assert.ok(!listing.data.posts.some(item => item.filename === "独立短句.md"));
+  const opened = await request("/api/drafts/from-post", "POST", { filename: "独立短句.md", contentType: "sentence" });
+  assert.equal(opened.data.content, "雨会停，想法会留下。");
+  const edited = await request(`/api/drafts/${opened.data.id}`, "PUT", { ...opened.data, content: "这条短句只留在自己的分区。", homepage: false });
+  const checked = await request("/api/check", "POST", { draftId: edited.data.id, version: edited.data.version });
+  const checkedJob = await waitJob(checked.data.id);
+  assert.equal(checkedJob.status, "checked", checkedJob.message);
+  assert.equal(checkedJob.homepageText, null);
+});
+
+test("real Hexo output escapes sentence HTML and omits long or opted-out homepage entries", async () => {
+  const scratch = path.join(temporary, "sentence-render");
+  await run("git", ["clone", "--quiet", root, scratch], root);
+  await fs.symlink(path.join(project, "node_modules"), path.join(scratch, "node_modules"), "dir");
+  const literal = '一句话也能写 <script>alert("x")</script>。';
+  const long = "长".repeat(61);
+  const privateToBoard = "这句话只在短句板里展示。";
+  for (const [filename, content, homepage] of [["literal.md", literal, true], ["long.md", long, true], ["board.md", privateToBoard, false]]) {
+    await fs.writeFile(path.join(scratch, "source/_sentences", filename), `---\ndate: 2026-09-30 12:30:00\nauthor: Hane\nhomepage: ${homepage}\n---\n\n${content}\n`);
+  }
+  const output = await run(process.execPath, [path.join(project, "writer/build.mjs"), scratch, "literal.md", "sentence"], scratch, 180_000);
+  assert.doesNotMatch(output, /(?:^|\s)(?:ERROR|FATAL|WARN)\b/m);
+  const board = await fs.readFile(path.join(scratch, "public/sentences/index.html"), "utf8");
+  const home = await fs.readFile(path.join(scratch, "public/index.html"), "utf8");
+  assert.ok(board.includes('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;'));
+  assert.ok(home.includes('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;'));
+  assert.ok(!board.includes('<script>alert("x")</script>'));
+  assert.ok(!home.includes('<script>alert("x")</script>'));
+  assert.ok(board.includes(long));
+  assert.ok(!home.includes(long));
+  assert.ok(board.includes(privateToBoard));
+  assert.ok(!home.includes(privateToBoard));
 });
 
 test("remote changes stop publication instead of overwriting another edit", async () => {

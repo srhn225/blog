@@ -1,0 +1,18 @@
+.sentence-board-intro { margin-bottom: 2rem; padding-bottom: 1.6rem; border-bottom: 1px solid var(--hane-glass-border); }
+.sentence-eyebrow { color: var(--hane-muted); font-size: .75rem; letter-spacing: .12em; }
+#page .sentence-board-intro h2 { margin: .7rem 0; color: var(--hane-ink); font-size: 1.7rem; }
+.sentence-board-intro p, .sentence-empty { color: var(--hane-muted); }
+.sentence-total { display: inline-block; padding: .25rem .75rem; border-radius: 2rem; background: var(--hane-soft); color: var(--hane-muted); font-size: .8rem; }
+.sentence-list { display: grid; gap: 1.25rem; }
+.sentence-card { position: relative; padding: 2rem 1.8rem 1.4rem; border: 1px solid var(--hane-glass-border); border-radius: 16px; background: var(--hane-glass); scroll-margin-top: 90px; overflow: hidden; }
+.sentence-card:target { outline: 2px solid var(--hane-water); outline-offset: 4px; }
+.sentence-quote { position: absolute; top: -.2rem; left: 1rem; font: 5rem Georgia, serif; color: var(--hane-water); opacity: .5; }
+#page .sentence-text { position: relative; margin: 0 0 1.5rem; color: var(--hane-ink); font-size: 1.2rem; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.sentence-meta { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; color: var(--hane-muted); font-size: .8rem; }
+#page .sentence-permalink { color: var(--hane-muted); text-decoration: none; }
+.sentence-home-badge { margin-left: auto; padding: .1rem .6rem; border-radius: 1rem; background: var(--hane-soft); color: var(--hane-muted); font-size: .7rem; }
+@media (max-width: 600px) {
+  #page .sentence-board-intro h2 { font-size: 1.35rem; }
+  .sentence-card { padding: 1.8rem 1.1rem 1.1rem; }
+  #page .sentence-text { font-size: 1.1rem; }
+}

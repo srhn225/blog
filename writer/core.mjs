@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import sentences from "../lib/sentences.cjs";
+export const { sentenceRules, sentenceLength, homepageEligible, sentenceTitle, escapeHtml, parseSentence } = sentences;
+
+export function contentType(value) {
+  if (value === undefined || value === "post") return "post";
+  if (value === "sentence") return "sentence";
+  throw new WriterError("内容类型无效。");
+}
 
 export class WriterError extends Error {
   constructor(message, status = 400) {
@@ -47,6 +55,7 @@ export function parsePost(raw) {
   if (typeof metadata !== "object" || Array.isArray(metadata))
     throw new WriterError("文章信息必须是 YAML 对象。");
   const fields = {
+    contentType: "post",
     title: String(metadata.title ?? ""),
     date: String(metadata.date ?? ""),
     categories: list(metadata.categories),
@@ -59,6 +68,7 @@ export function parsePost(raw) {
 }
 
 export function validateDraft(input, { publish = false } = {}) {
+  const type = contentType(input.contentType);
   const text = (key, max = 1000) => {
     const value = String(input[key] ?? "");
     if (value.length > max || value.includes("\0"))
@@ -66,6 +76,7 @@ export function validateDraft(input, { publish = false } = {}) {
     return value;
   };
   const draft = {
+    contentType: type,
     title: text("title", 300).trim(),
     filename: safeFilename(text("filename", 220)),
     date: text("date", 30).trim(),
@@ -75,6 +86,18 @@ export function validateDraft(input, { publish = false } = {}) {
     cover: text("cover", 2000).trim(),
     content: text("content", 2_000_000),
   };
+  if (type === "sentence") {
+    draft.content = draft.content.replace(/\r\n?/g, "\n").trim();
+    if (sentenceLength(draft.content) > sentenceRules.limit || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(draft.content))
+      throw new WriterError(`短句最多 ${sentenceRules.limit} 字，不能包含无效控制字符。`);
+    if (input.homepage !== undefined && typeof input.homepage !== "boolean")
+      throw new WriterError("首页一言设置无效。");
+    draft.title = sentenceTitle(draft.content);
+    draft.homepage = input.homepage !== false;
+    draft.categories = [];
+    draft.tags = [];
+    draft.cover = "";
+  }
   if (
     draft.categories.length > 12 ||
     draft.tags.length > 40 ||
@@ -92,11 +115,12 @@ export function validateDraft(input, { publish = false } = {}) {
       draft.date.replace("T", " ").slice(0, 16)
   )
     throw new WriterError("文章日期无效。");
+  if (type === "sentence") draft.date = shanghaiDate(date);
   if (draft.cover && !/^(https?:\/\/|\/)/i.test(draft.cover))
     throw new WriterError("封面请使用 http(s) 地址或以 / 开头的站内路径。");
-  if (publish && !draft.title) throw new WriterError("发布前请填写文章标题。");
+  if (publish && !draft.title && type === "post") throw new WriterError("发布前请填写文章标题。");
   if (publish && !draft.content.trim())
-    throw new WriterError("发布前请写一些正文。");
+    throw new WriterError(type === "sentence" ? "发布前请写下一条短句。" : "发布前请写一些正文。");
   return draft;
 }
 
@@ -115,7 +139,9 @@ export function shanghaiDate(date = new Date()) {
 
 export function serializeDraft(draft) {
   const fields = validateDraft(draft, { publish: true });
-  const original = draft.baseContent ? parsePost(draft.baseContent) : null;
+  const original = draft.baseContent
+    ? (fields.contentType === "sentence" ? parseSentence : parsePost)(draft.baseContent)
+    : null;
   if (
     original &&
     Object.entries(fields)
@@ -126,6 +152,10 @@ export function serializeDraft(draft) {
       )
   )
     return draft.baseContent;
+  if (fields.contentType === "sentence") {
+    const metadata = { ...(original?.metadata || {}), date: fields.date, author: fields.author, homepage: fields.homepage };
+    return `---\n${yaml.dump(metadata, { schema: yaml.JSON_SCHEMA, lineWidth: -1, noRefs: true })}---\n\n${fields.content}\n`;
+  }
   const metadata = {
     ...(original?.metadata || {}),
     title: fields.title,
@@ -170,12 +200,7 @@ export const plainText = (html) =>
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<[^>]+>/g, "")
-    .replace(/&(?:nbsp|#160);/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&(?:nbsp|#160|amp|lt|gt|quot|#39);/g, entity => ({ "&nbsp;": " ", "&#160;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" })[entity])
     .replace(/\s+/g, " ")
     .trim();
 

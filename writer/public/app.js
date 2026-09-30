@@ -6,6 +6,7 @@ const state = {
   site: null,
   token: "",
   posts: [],
+  sentences: [],
   drafts: [],
   categories: [],
   tags: [],
@@ -31,7 +32,14 @@ const fieldIds = [
   "author",
   "cover",
   "filename",
+  "homepage",
 ];
+const isSentence = (item = state.draft) => item?.contentType === "sentence";
+const sentenceCount = (text) => Array.from(text.trim()).length;
+const eligibleSentence = (text) => {
+  const rules = state.site?.sentenceRules || { min: 2, max: 60 };
+  return sentenceCount(text) >= rules.min && sentenceCount(text) <= rules.max && !/[\r\n]/.test(text.trim());
+};
 const terminal = (job) =>
   ["checked", "deployed", "failed", "attention"].includes(job.status);
 let saveTimer, previewTimer, toastTimer, pollTimer;
@@ -125,6 +133,8 @@ function fields() {
       ? $("custom-category").value.trim()
       : $("category").value;
   return {
+    contentType: isSentence() ? "sentence" : "post",
+    ...(isSentence() ? { homepage: $("homepage").checked } : {}),
     title: $("title").value,
     content: $("content").value,
     categories: state.categoryChanged
@@ -263,6 +273,19 @@ function updateStats() {
   $("article-date").textContent = $("date").value
     ? $("date").value.slice(0, 10).replaceAll("-", " / ")
     : "选择文章日期";
+  if (isSentence()) {
+    const length = sentenceCount(content);
+    const eligible = eligibleSentence(content);
+    $("word-count").textContent = `${length} / ${state.site.sentenceRules.limit} 字`;
+    $("reading-time").textContent = "一句话，也有自己的位置";
+    $("sentence-eligibility").textContent = length > state.site.sentenceRules.limit
+      ? "内容超过 500 字，请精简后发布。"
+      : !length ? "写下短句后，会自动检查一言收录条件。"
+      : !eligible ? "这条短句会留在短句分区，长度或换行不适合首页一言。"
+      : $("homepage").checked ? "符合条件，发布后会加入首页一言。" : "仅展示在短句分区。";
+    $("sentence-eligibility").classList.toggle("ineligible", !eligible);
+    updateDisabled();
+  }
 }
 function renderPreview() {
   if (state.view === "edit") return;
@@ -270,6 +293,12 @@ function renderPreview() {
     $("preview").replaceChildren(
       node("p", "preview-placeholder", "写下第一句话，预览就会出现在这里。"),
     );
+    return;
+  }
+  if (isSentence()) {
+    const quote = node("blockquote", "sentence-preview");
+    quote.append(node("p", "", $("content").value.trim()), node("footer", "", `${$("author").value || state.site.author} · ${$("date").value.slice(0, 10)}`));
+    $("preview").replaceChildren(quote);
     return;
   }
   const sanitized = DOMPurify.sanitize(
@@ -325,23 +354,30 @@ function renderCategories() {
   }
 }
 function renderLibrary() {
+  document.querySelector(".library").setAttribute("aria-label", state.mode === "sentences" ? "短句列表" : state.mode === "drafts" ? "草稿列表" : "文章列表");
   $("posts-count").textContent = state.posts.length;
   $("drafts-count").textContent = state.drafts.length;
+  $("sentences-count").textContent = state.sentences.length;
   $("nav-posts").classList.toggle(
     "active",
     state.mode === "posts" && !state.categoryFilter,
   );
   $("nav-drafts").classList.toggle("active", state.mode === "drafts");
+  $("nav-sentences").classList.toggle("active", state.mode === "sentences");
   $("library-title").textContent =
-    state.categoryFilter || (state.mode === "drafts" ? "草稿箱" : "文章库");
+    state.categoryFilter || (state.mode === "drafts" ? "草稿箱" : state.mode === "sentences" ? "短句板" : "文章库");
   $("list-caption").textContent =
-    state.mode === "drafts" ? "最近保存的草稿" : "最近的文章";
+    state.mode === "drafts" ? "最近保存的草稿" : state.mode === "sentences" ? "短句与本地草稿" : "最近的文章";
+  $("search").placeholder = state.mode === "sentences" ? "搜索句子、作者" : "搜索标题、分类、标签";
+  $("search").setAttribute("aria-label", state.mode === "sentences" ? "搜索短句" : "搜索文章");
   const query = $("search").value.trim().toLocaleLowerCase();
-  const items = (state.mode === "drafts" ? state.drafts : state.posts).filter(
+  const sentenceDrafts = state.drafts.filter(isSentence);
+  const sentenceItems = [...sentenceDrafts, ...state.sentences.filter(item => !sentenceDrafts.some(draft => draft.filename === item.filename))].sort((a, b) => b.date.localeCompare(a.date));
+  const items = (state.mode === "drafts" ? state.drafts : state.mode === "sentences" ? sentenceItems : state.posts).filter(
     (item) =>
       (!state.categoryFilter ||
         item.categories.includes(state.categoryFilter)) &&
-      [item.title, ...item.categories, ...item.tags, item.filename]
+      [item.title, item.author, item.content, ...item.categories, ...item.tags, item.filename]
         .join(" ")
         .toLocaleLowerCase()
         .includes(query),
@@ -354,22 +390,22 @@ function renderLibrary() {
       node(
         "p",
         "empty-list",
-        query ? "没有找到匹配的文章。" : "还没有内容，写下你的第一篇吧。",
+        query ? "没有找到匹配的内容。" : state.mode === "sentences" ? "还没有短句，写下此刻的想法吧。" : "还没有内容，写下你的第一篇吧。",
       ),
     );
   for (const item of items) {
     const active =
-      state.mode === "drafts"
+      item.id
         ? item.id === state.draft?.id
         : item.filename === state.draft?.filename &&
-          state.draft?.kind === "post";
-    const button = node("button", `article-item${active ? " active" : ""}`);
-    button.append(node("h3", "", item.title || "未命名的文章"));
+          state.draft?.kind === "post" && isSentence(item) === isSentence();
+    const button = node("button", `article-item${active ? " active" : ""}${isSentence(item) ? " sentence-item" : ""}`);
+    button.append(node("h3", "", item.title || (isSentence(item) ? "新短句" : "未命名的文章")));
     button.append(
       node(
         "p",
         "",
-        item.excerpt ||
+        (isSentence(item) ? (item.kind === "new" ? "本地草稿" : "已发布") + " · " + (item.author || state.site.author) : item.excerpt) ||
           item.content?.replace(/[#*`>]/g, "").slice(0, 80) ||
           "故事正在酝酿中…",
       ),
@@ -379,7 +415,7 @@ function renderLibrary() {
       state.mode === "drafts" ? localTime(new Date(item.updatedAt)) : item.date;
     meta.append(
       node("span", "", displayDate.slice(0, 10).replaceAll("-", ".")),
-      node("span", "article-category", item.categories[0] || "未分类"),
+      node("span", "article-category", isSentence(item) ? (eligibleSentence(item.content || "") && item.homepage !== false ? "首页一言" : "短句") : item.categories[0] || "未分类"),
     );
     button.append(meta);
     button.addEventListener(
@@ -387,10 +423,11 @@ function renderLibrary() {
       attempt(async () => {
         await save();
         const draft =
-          state.mode === "drafts"
+          item.id
             ? await api(`/api/drafts/${item.id}`)
             : await api("/api/drafts/from-post", "POST", {
                 filename: item.filename,
+                contentType: item.contentType || "post",
               });
         state.drafts = [
           draft,
@@ -412,6 +449,19 @@ function loadDraft(draft) {
   for (const id of ["title", "content", "author", "cover", "filename"])
     $(id).value = draft[id] || "";
   $("date").value = draft.date.replace(" ", "T");
+  $("homepage").checked = draft.homepage !== false;
+  const sentence = isSentence(draft);
+  document.body.classList.toggle("sentence-mode", sentence);
+  document.querySelector(".inspector").setAttribute("aria-label", sentence ? "短句设置" : "文章设置");
+  $("compose-prompt").textContent = sentence ? "A SMALL THOUGHT, A PLACE TO STAY" : "MAKE ROOM FOR A NEW IDEA";
+  $("inspector-title").textContent = sentence ? "短句设置" : "文章设置";
+  $("date-label").textContent = sentence ? "发表日期" : "文章日期";
+  $("content-label").textContent = sentence ? "短句内容" : "Markdown 正文";
+  $("content").placeholder = sentence ? "写下此刻想到的一句话……\n\n可以很短，也可以慢慢说。" : "每一个故事，都从一句话开始。\n\n记下今天的发现、喜欢的音乐，\n或一个还没来得及说出口的想法……";
+  $("preview").setAttribute("aria-label", sentence ? "短句预览" : "文章预览");
+  $("format-label").textContent = sentence ? "纯文本 · 短句" : "Markdown";
+  $("publish-label").textContent = sentence ? "发布短句" : "发布文章";
+  $("publish-note").textContent = sentence ? "让一句话抵达远方" : "让文章抵达远方";
   $("tags").value = draft.tags.join(", ");
   $("category").replaceChildren(node("option", "", "未分类"));
   $("category").firstElementChild.value = "";
@@ -433,7 +483,7 @@ function loadDraft(draft) {
   $("custom-category").hidden = true;
   $("custom-category").value = "";
   $("filename").readOnly = draft.kind === "post";
-  $("draft-kind").textContent = draft.kind === "post" ? "编辑文章" : "新文章";
+  $("draft-kind").textContent = draft.kind === "post" ? (sentence ? "编辑短句" : "编辑文章") : sentence ? "新短句" : "新文章";
   setSaveStatus(
     `已保存 · ${localTime(new Date(draft.updatedAt)).slice(11, 16)}`,
   );
@@ -461,6 +511,7 @@ function loadDraft(draft) {
         for (const id of ["title", "content", "author", "cover", "filename"])
           $(id).value = pending.fields[id];
         $("date").value = pending.fields.date.replace(" ", "T");
+        $("homepage").checked = pending.fields.homepage !== false;
         $("tags").value = pending.fields.tags.join(", ");
         if (
           JSON.stringify(pending.fields.categories) !==
@@ -490,6 +541,7 @@ function updateDisabled() {
   const locked =
     state.job && !terminal(state.job) && state.job.draftId === state.draft?.id;
   for (const id of fieldIds) $(id).disabled = Boolean(locked || !state.draft);
+  $("homepage").disabled ||= isSentence() && !eligibleSentence($("content").value);
   for (const button of $("toolbar").querySelectorAll("button"))
     button.disabled = Boolean(locked || !state.draft);
   for (const button of $("tag-suggestions").querySelectorAll("button"))
@@ -498,26 +550,32 @@ function updateDisabled() {
     $(id).disabled = Boolean(
       (state.job && !terminal(state.job)) || !state.draft,
     );
+  if (isSentence() && sentenceCount($("content").value) > state.site.sentenceRules.limit) {
+    $("publish").disabled = true;
+    $("check").disabled = true;
+  }
   $("export").disabled = !state.draft;
 }
-async function newDraft() {
+async function newDraft(type = "post") {
   await save();
   const date = localTime(new Date());
   const draft = await api("/api/drafts", "POST", {
+    contentType: type,
+    ...(type === "sentence" ? { homepage: true } : {}),
     title: "",
-    filename: `${date.slice(0, 10)}-untitled-${crypto.randomUUID().slice(0, 6)}.md`,
+    filename: `${date.slice(0, 10)}-${type === "sentence" ? "sentence" : "untitled"}-${crypto.randomUUID().slice(0, 8)}.md`,
     date,
-    categories: ["日常"],
+    categories: type === "sentence" ? [] : ["日常"],
     tags: [],
     author: state.site.author,
     cover: "",
     content: "",
   });
   state.drafts = [draft, ...state.drafts];
-  state.mode = "drafts";
+  state.mode = type === "sentence" ? "sentences" : "drafts";
   state.categoryFilter = "";
   loadDraft(draft);
-  $("title").focus();
+  $(type === "sentence" ? "content" : "title").focus();
   document.body.classList.remove("menu-open");
 }
 function download(filename, text) {
@@ -577,27 +635,28 @@ function safeLink(url, text) {
 function renderJob(job) {
   state.job = job;
   const checking = job.mode === "check";
+  const label = job.contentType === "sentence" ? "短句" : "文章";
   $("publish-title").textContent =
     job.status === "deployed"
-      ? "文章已抵达远方"
+      ? `${label}已抵达远方`
       : job.status === "checked"
         ? "可以安心发布了"
         : checking
           ? "检查发布"
-          : "发布文章";
+          : `发布${label}`;
   $("publish-message").textContent = job.message;
   $("publish-steps").replaceChildren();
   const steps = checking
     ? [
-        ["prepare", "准备文章"],
+        ["prepare", `准备${label}`],
         ["build", "构建并检查页面"],
       ]
     : [
-        ["prepare", "准备文章"],
+        ["prepare", `准备${label}`],
         ["build", "构建并检查页面"],
         ["push", "提交并推送到 GitHub"],
         ["deploy", "部署到 GitHub Pages"],
-        ["live", "核对线上文章"],
+        ["live", job.contentType === "sentence" ? "核对短句与首页一言" : "核对线上文章"],
       ];
   steps.forEach(([key, label], i) => {
     const status = job.steps[key] || "pending";
@@ -611,7 +670,7 @@ function renderJob(job) {
   });
   $("job-links").replaceChildren();
   if (job.publicUrl && job.pushed)
-    $("job-links").append(safeLink(job.publicUrl, "查看线上文章 ↗"));
+    $("job-links").append(safeLink(job.publicUrl, `查看线上${label} ↗`));
   if (job.actionsUrl && !checking)
     $("job-links").append(safeLink(job.actionsUrl, "查看 GitHub Actions ↗"));
   if (job.commit && state.site.repository)
@@ -640,6 +699,7 @@ async function pollJob(id) {
     const current = state.draft?.id;
     Object.assign(state, {
       posts: data.posts,
+      sentences: data.sentences,
       drafts: data.drafts,
       categories: data.categories,
       tags: data.tags,
@@ -709,7 +769,7 @@ function history() {
 }
 
 for (const id of fieldIds)
-  $(id).addEventListener(id === "category" ? "change" : "input", changed);
+  $(id).addEventListener(["category", "homepage"].includes(id) ? "change" : "input", changed);
 for (const button of document.querySelectorAll("[data-view]")) {
   if (button.tagName !== "BUTTON") continue;
   button.addEventListener("click", () => {
@@ -723,7 +783,24 @@ for (const button of document.querySelectorAll("[data-view]")) {
 }
 for (const button of $("toolbar").querySelectorAll("button"))
   button.addEventListener("click", () => format(button.dataset.format));
-$("new-post").addEventListener("click", attempt(newDraft));
+$("new-post").addEventListener("click", attempt(() => newDraft("post")));
+$("new-sentence").addEventListener("click", attempt(() => newDraft("sentence")));
+$("nav-sentences").addEventListener("click", attempt(async () => {
+  await save();
+  state.mode = "sentences";
+  state.categoryFilter = "";
+  if (!isSentence()) {
+    const draft = state.drafts.find(isSentence);
+    if (draft) loadDraft(await api(`/api/drafts/${draft.id}`));
+    else if (state.sentences.length) {
+      const opened = await api("/api/drafts/from-post", "POST", { filename: state.sentences[0].filename, contentType: "sentence" });
+      state.drafts = [opened, ...state.drafts];
+      loadDraft(opened);
+    } else await newDraft("sentence");
+  }
+  renderLibrary();
+  document.body.classList.remove("menu-open");
+}));
 $("nav-posts").addEventListener("click", () => {
   state.mode = "posts";
   state.categoryFilter = "";
@@ -810,10 +887,11 @@ document.addEventListener("keydown", (event) => {
     }
     if (event.key.toLowerCase() === "n") {
       event.preventDefault();
-      void attempt(newDraft)();
+      void attempt(() => newDraft(state.mode === "sentences" ? "sentence" : "post"))();
     }
     if (
       event.key.toLowerCase() === "b" &&
+      !isSentence() &&
       document.activeElement === $("content")
     ) {
       event.preventDefault();
@@ -839,6 +917,7 @@ async function boot() {
       site: data.site,
       token: data.token,
       posts: data.posts,
+      sentences: data.sentences,
       drafts: data.drafts,
       categories: data.categories,
       tags: data.tags,

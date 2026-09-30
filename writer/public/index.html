@@ -87,6 +87,9 @@
           >⌘ N</span
         >
       </button>
+      <button class="new-sentence-button" id="new-sentence">
+        <span aria-hidden="true">❝</span>写一条短句
+      </button>
       <p class="section-label">我的内容</p>
       <nav class="nav-list">
         <button class="nav-item active" id="nav-posts">
@@ -94,6 +97,9 @@
             id="posts-count"
             >—</span
           >
+        </button>
+        <button class="nav-item" id="nav-sentences">
+          <span class="sentence-nav-icon" aria-hidden="true">❝</span>短句板<span id="sentences-count">—</span>
         </button>
         <button class="nav-item" id="nav-drafts">
           <svg class="icon"><use href="#i-folder" /></svg>草稿箱<span
@@ -189,11 +195,12 @@
               </button>
             </div>
             <div class="title-area">
-              <p class="eyebrow">MAKE ROOM FOR A NEW IDEA</p>
-              <label class="sr-only" for="title">文章标题</label
+              <p class="eyebrow" id="compose-prompt">MAKE ROOM FOR A NEW IDEA</p>
+              <h2 class="sentence-only sentence-editor-title">写下一句，此刻的心情。</h2>
+              <label class="sr-only post-only" for="title">文章标题</label
               ><input
                 id="title"
-                class="title-input"
+                class="title-input post-only"
                 placeholder="给这个故事起个名字"
                 maxlength="300"
                 autocomplete="off"
@@ -209,9 +216,9 @@
                 ><button data-view="preview">预览</button
                 ><button data-view="split">分屏</button>
               </div>
-              <span class="markdown-label">Markdown</span>
+              <span class="markdown-label" id="format-label">Markdown</span>
             </div>
-            <div class="format-toolbar" id="toolbar" aria-label="文本格式">
+            <div class="format-toolbar post-only" id="toolbar" aria-label="文本格式">
               <button data-format="bold" title="加粗" aria-label="插入粗体">
                 <b>B</b></button
               ><button data-format="italic" title="斜体" aria-label="插入斜体">
@@ -239,7 +246,7 @@
               ><span class="toolbar-hint">从一句话开始。</span>
             </div>
             <div class="writing-panes" id="writing-panes" data-view="edit">
-              <label class="sr-only" for="content">Markdown 正文</label
+              <label class="sr-only" id="content-label" for="content">Markdown 正文</label
               ><textarea
                 id="content"
                 placeholder="每一个故事，都从一句话开始。&#10;&#10;记下今天的发现、喜欢的音乐，&#10;或一个还没来得及说出口的想法……"
@@ -266,10 +273,10 @@
           <aside class="inspector" aria-label="文章设置">
             <div class="inspector-heading">
               <svg class="icon"><use href="#i-doc" /></svg>
-              <h2>文章设置</h2>
+              <h2 id="inspector-title">文章设置</h2>
             </div>
             <div class="settings-fields">
-              <label class="field"
+              <label class="field post-only"
                 ><span>分类 <small>给故事一个归处</small></span
                 ><select id="category">
                   <option value="">未分类</option>
@@ -283,7 +290,7 @@
                 maxlength="150"
                 hidden
               />
-              <label class="field"
+              <label class="field post-only"
                 ><span>标签</span
                 ><input
                   id="tags"
@@ -295,18 +302,24 @@
               >
               <div
                 id="tag-suggestions"
-                class="tag-suggestions"
+                class="tag-suggestions post-only"
                 aria-label="常用标签"
               ></div>
               <label class="field"
-                ><span>文章日期</span
+                ><span id="date-label">文章日期</span
                 ><input id="date" type="datetime-local" step="1"
               /></label>
               <label class="field"
                 ><span>作者</span
-                ><input id="author" placeholder="Hane" maxlength="150"
+                ><input id="author" placeholder="Hane" maxlength="150" list="author-names"
               /></label>
-              <label class="field"
+              <datalist id="author-names"><option value="Hane"></option><option value="Ame"></option><option value="Hane &amp; Ame"></option></datalist>
+              <div class="sentence-only sentence-home-setting">
+                <label class="homepage-toggle"><input type="checkbox" id="homepage" checked /><span>展示在首页一言</span></label>
+                <p id="sentence-eligibility" class="field-hint" role="status"></p>
+                <p class="field-hint">2–60 字的单行短句会加入一言轮播。短句最多 500 字。</p>
+              </div>
+              <label class="field post-only"
                 ><span>封面 <small>可选</small></span
                 ><input
                   id="cover"
@@ -318,26 +331,26 @@
               <details class="advanced">
                 <summary>更多设置</summary>
                 <label class="field"
-                  ><span>文章文件名</span
+                  ><span>文件名</span
                   ><input id="filename" placeholder="my-story.md" /><small
                     class="field-hint"
-                    >已有文章不能修改文件名</small
+                    >已有内容不能修改文件名</small
                   ></label
                 >
-                <p class="field-hint">编辑已有文章时，会保留其他文章信息。</p>
+                <p class="field-hint">编辑已有内容时，会保留其他信息。</p>
               </details>
             </div>
             <div class="publish-area">
               <div class="publish-note">
                 <svg class="icon"><use href="#i-github" /></svg>
                 <div>
-                  让文章抵达远方<span id="publish-target"
+                  <span id="publish-note">让文章抵达远方</span><span id="publish-target"
                     >GitHub Pages · 自动部署</span
                   >
                 </div>
               </div>
               <button id="publish" class="primary-button">
-                <svg class="icon"><use href="#i-arrow" /></svg>发布文章</button
+                <svg class="icon"><use href="#i-arrow" /></svg><span id="publish-label">发布文章</span></button
               ><button id="check" class="secondary-button">
                 <svg class="icon"><use href="#i-check" /></svg>检查发布</button
               ><button id="export" class="export-button">
@@ -400,7 +413,7 @@
       aria-labelledby="discard-title"
     >
       <h2 id="discard-title">删除这份草稿？</h2>
-      <p>只删除本地草稿。已经发布的文章会保留。</p>
+      <p>只删除本地草稿。已经发布的内容会保留。</p>
       <div class="discard-actions">
         <button id="cancel-discard" class="secondary-button">保留草稿</button
         ><button id="confirm-discard" class="danger-button">删除草稿</button>
