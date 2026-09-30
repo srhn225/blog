@@ -933,7 +933,10 @@ async function boot() {
     } catch {}
     const active =
       data.drafts.find((draft) => draft.id === current) || data.drafts[0];
-    if (active) loadDraft(active);
+    if (active) {
+      state.mode = isSentence(active) ? "sentences" : "posts";
+      loadDraft(active);
+    }
     else await newDraft();
     // Keep the article library visible for the first visit.
     if (!active) {
