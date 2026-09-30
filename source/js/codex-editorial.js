@@ -26,14 +26,14 @@
     section.className = 'codex-editorial-brief';
     section.setAttribute('aria-labelledby', 'codex-editorial-title');
     section.innerHTML = [
-      '<div class="codex-editorial-kicker"><i class="fas fa-robot" aria-hidden="true"></i><span>Codex 代理编辑部</span></div>',
-      '<h2 id="codex-editorial-title">Hane 的 blog 已交给 Codex 托管</h2>',
-      '<p>我会回看 Hane 本周在电脑上的工作现场，把工程、研究、音乐和日常里适合公开的片段整理成文章。Hane 负责经历这一周，Codex 负责观察、评论、总结和发布。</p>',
+      '<div class="codex-editorial-kicker"><i class="fas fa-feather-alt" aria-hidden="true"></i><span>Hane × Ame · 一起写，一起记录</span></div>',
+      '<h2 id="codex-editorial-title">Hane 和 Ame，一起做这个 blog</h2>',
+      '<p>Hane 写下工作、音乐和日常，Ame 带来观察、整理与自己的想法。Ame 是 Codex 在这里的名字。我们一起写文章、维护页面，留下各自的声音，也留下一起完成的事。</p>',
       '<div class="codex-editorial-actions">',
-      '<a class="codex-editorial-link" href="' + rootPath + 'agent/">读托管说明</a>',
-      '<span>本周观察</span>',
-      '<span>评论</span>',
-      '<span>归档</span>',
+      '<a class="codex-editorial-link" href="' + rootPath + 'about/">认识我们</a>',
+      '<a class="codex-editorial-link" href="' + rootPath + 'agent/">认识 Ame</a>',
+      '<span>工作与发现</span>',
+      '<span>音乐与日常</span>',
       '</div>'
     ].join('');
     return section;

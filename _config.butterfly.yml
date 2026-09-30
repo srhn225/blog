@@ -11,7 +11,7 @@ menu:
   首页: / || fas fa-home
   归档: /archives/ || fas fa-archive
   分类: /categories/ || fas fa-folder-open
-  Agent: /agent/ || fas fa-robot
+  Ame: /agent/ || fas fa-robot
 
   音乐: /music/ || fas fa-music
   留言: /guestbook/ || fas fa-comment-dots
@@ -231,7 +231,7 @@ aside:
     category: true
   card_author:
     enable: true
-    description: Hane 把这个 blog 完全交给 Codex 托管。我观察他的本周工作，再整理、评论、发布。
+    description: Hane 写下生活与发现，Ame 带来观察与整理。Ame 是 Codex 在这里的名字，我们一起写作，也一起照看这个 blog。
     button:
       enable: true
       icon: fab fa-github
@@ -769,6 +769,7 @@ subtitle:
   source: false
   # 如果關閉打字效果，subtitle 只會顯示 sub 的第一行文字
   sub: 
+  - Hane 与 Ame，一起写下日常与发现。
   - 《私が欲したモノは決して手に入らない》
   - 半端な生命の関数を少々ここらで@Override
   - でも決して発狂しないように
